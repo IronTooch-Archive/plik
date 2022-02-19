@@ -1,86 +1,129 @@
-[![Build Status](https://travis-ci.org/root-gg/plik.svg?branch=master)](https://travis-ci.org/root-gg/plik)
+[![Mentioned in Awesome Go](https://awesome.re/mentioned-badge.svg)](https://github.com/avelino/awesome-go)
+[![Build](https://github.com/root-gg/plik/actions/workflows/master.yaml/badge.svg)](https://github.com/root-gg/plik/actions/workflows/master.yaml)
 [![Go Report](https://img.shields.io/badge/Go_report-A+-brightgreen.svg)](http://goreportcard.com/report/root-gg/plik)
 [![Docker Pulls](https://img.shields.io/docker/pulls/rootgg/plik.svg)](https://hub.docker.com/r/rootgg/plik)
 [![GoDoc](https://godoc.org/github.com/root-gg/plik?status.svg)](https://godoc.org/github.com/root-gg/plik)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](http://opensource.org/licenses/MIT)
 
+Want to chat with us ? Telegram channel : https://t.me/plik_rootgg
+
 # Plik
 
-Plik is a scalable & friendly temporary file upload system ( wetransfer like ) in golang.
+Plik is a scalable & friendly temporary file upload system (Wetransfer like) in golang.
 
 ### Main features
-   - Multiple data backends : File, OpenStack Swift, WeedFS
-   - Multiple metadata backends : File, MongoDB, Bolt
+   - Powerful command line client
+   - Easy to use web UI
+   - Multiple data backend : File, OpenStack Swift, S3, Google Cloud Storage
+   - Multiple metadata backend : Sqlite3, PostgreSQL, MySQL
    - OneShot : Files are destructed after the first download
    - Stream : Files are streamed from the uploader to the downloader (nothing stored server side)  
    - Removable : Give the ability to the uploader to remove files at any time
    - TTL : Custom expiration date
-   - Password : Protect upload with login/password (Auth Basic)
-   - Yubikey : Protect upload with your yubikey. (One Time Password)
+   - Password : Protect upload with login/pasgisword (Auth Basic)
    - Comments : Add custom message (in Markdown format)
-   - User authentication : Google / OVH
+   - User authentication : Local / Google / OVH
    - Upload restriction : Source IP / Token
+   - Administrator CLI and web UI
+   - Server side encryption (with S3 data backend)
    - [ShareX](https://getsharex.com/) Uploader : Directly integrated into ShareX
    - [plikSharp](https://github.com/iss0/plikSharp) : A .NET API client for Plik
+   - [Filelink for Plik](https://gitlab.com/joendres/filelink-plik) : Thunderbird Addon to upload attachments to Plik
 
-### Version
-1.2.3
+### Content Table
+1. [Installation](#installation) 
+2. [Configuration](#configuration)
+3. [Data Backends](#data-backends)
+4. [Metadata Backends](#metadata-backends)
+5. [Client CLI](#cli-client)
+6. [Go Client](#go-client)
+7. [HTTP API](#api)
+8. [Admin CLI](#admin-cli)
+9. [Authentication](#authentication)
+10. [Security](#security)
+11. [Cross Compilation](#cross-compilation)
+12. [FAQ](#faq)
+13. [How To Contribute](#how-to-contribute)
 
-### Installation
+### Installation <a name="installation"></a>
 
 ##### From release
 To run plik, it's very simple :
 ```sh
-$ wget https://github.com/root-gg/plik/releases/download/1.2.2/plik-1.2.2-linux-64bits.tar.gz
-$ tar xzvf plik-1.2.2-linux-64bits.tar.gz
-$ cd plik-1.2.2/server
+$ wget https://github.com/root-gg/plik/releases/download/1.3.5/plik-1.3.5-linux-amd64.tar.gz
+$ tar xzvf plik-1.3.5-linux-amd64.tar.gz
+$ cd plik-1.3.5-linux-amd64/server
 $ ./plikd
 ```
-Et voilà ! You now have a fully functional instance of plik running on http://127.0.0.1:8080.  
-You can edit server/plikd.cfg to adapt the configuration to your needs (ports, ssl, ttl, backends params,...)
-
-##### From root.gg Debian repository
-
-Configure root.gg repository and install server and/or client
-```
-wget -O - http://mir.root.gg/gg.key | apt-key add -
-echo "deb http://mir.root.gg/ $(lsb_release --codename --short) main" > /etc/apt/sources.list.d/root.gg.list
-apt-get update
-apt-get install plikd plik
-```
-
-Edit server configuration at /etc/plikd.cfg and start the server 
-```
-service plikd start
-```
+Et voilà ! You now have a fully functional instance of Plik running on http://127.0.0.1:8080.  
+You can edit server/plikd.cfg to adapt the configuration to your needs (ports, ssl, ttl, backend params,...)
 
 ##### From sources
-To compile plik from sources, you'll need golang and npm installed on your system.
+To compile plik from sources, you'll need golang and npm installed on your system
 
-First, get the project and libs via go get :
-```sh
-$ go get github.com/root-gg/plik/server
-go/src/github.com/root-gg/plik/server/handlers/misc.go:51: undefined: common.GetBuildInfo <== ignore this warning
-$ cd $GOPATH/src/github.com/root-gg/plik/
-```
-
-To build everything and run it :
+Git clone or go get the project and simply run make :
 ```sh
 $ make
 $ cd server && ./plikd
 ```
 
-To make debian packages :
+##### Docker <a name="docker"></a>
+Plik comes with multiarch docker images built for linux amd64/i386/arm/arm64: 
+ - rootgg/plik:latest (latest release)
+ - rootgg/plik:{version} (release)
+ - rootgg/plik:dev (latest commit of master)
+
+See the [Plik Docker reference](documentation/docker.md)
+
+Plik also comes with some useful scripts to test backend in standalone docker instances :
+
+See the [Plik Docker backend testing](testing)
+
+### Configuration <a name="configuration"></a>
+
+The configuration is managed using a TOML file [plikd.cfg](server/plikd.cfg)
+
+###### Defining configuration parameters using environment variables
+
+One can specify configuration parameters using env variable with the configuration parameter in screaming snake case  
 ```
-$ make debs-server debs-client
+    PLIKD_DEBUG_REQUESTS=true ./plikd
 ```
 
-To make release archives :
+For Arrays and config maps they must be provided in json format.
+Arrays are overridden but maps are merged
+
 ```
-$ make releases
+    PLIKD_DATA_BACKEND_CONFIG='{"Directory":"/var/files"}' ./plikd
 ```
 
-### Cli client
+### Data backends <a name="data-backends"></a>
+
+Plik is shipped with multiple data backend for uploaded files and metadata backend for the upload metadata.
+
+ - File databackend :
+
+Store uploaded files in a local or mounted file system directory.
+
+ - Openstack Swift databackend : http://docs.openstack.org/developer/swift/
+
+Openstack Swift is a highly available, distributed, eventually consistent object/blob store which supports Server Side Encryption  
+
+ - Amazon S3
+
+ - Google Cloud Storage
+
+### Metadata backends <a name="metadata-backends"></a>
+
+ - Sqlite3
+
+Suitable for standalone deployment.
+
+ - PostgreSQL / Mysql
+
+Suitable for distributed / High Availability deployment.
+
+### Cli client <a name="cli-client"></a>
 Plik is shipped with a powerful golang multiplatform cli client (downloadable in web interface) :  
 
 ```
@@ -101,7 +144,6 @@ Options:
   --comments COMMENT        Set comments of the upload ( MarkDown compatible )
   -p                        Protect the upload with login and password
   --password PASSWD         Protect the upload with login:password ( if omitted default login is "plik" )
-  -y, --yubikey             Protect the upload with a Yubikey OTP
   -a                        Archive upload using default archive params ( see ~/.plikrc )
   --archive MODE            Archive upload using specified archive backend : tar|zip
   --compress MODE           [tar] Compression codec : gzip|bzip2|xz|lzip|lzma|lzop|compress|no
@@ -118,7 +160,7 @@ Options:
 ```
 
 For example to create directory tar.gz archive and encrypt it with openssl :
-```
+```bash
 $ plik -a -s mydirectory/
 Passphrase : 30ICoKdFeoKaKNdnFf36n0kMH
 Upload successfully created : 
@@ -132,59 +174,58 @@ curl -s 'https://127.0.0.1:8080/file/0KfNj6eMb93ilCrl/q73tEBEqM04b22GP/mydirecto
 
 Client configuration and preferences are stored at ~/.plikrc or /etc/plik/plikrc ( overridable with PLIKRC environement variable )
 
-### Available data backends
+### Quick upload using curl only
 
-Plik is shipped with multiple data backend for uploaded files and metadata backend for the upload metadata.
-
- - File databackend :
-
-Store uploaded files in a local or mounted file system directory. This is suitable for multiple instance deployment if all instances can share the directory.
-
- - Openstack Swift databackend : http://docs.openstack.org/developer/swift/
-
-Openstack Swift is a highly available, distributed, eventually consistent object/blob store.
-
- - SeaweedFS databackend : https://github.com/chrislusf/seaweedfs
-
-SeaweedFS is a simple and highly scalable distributed file system.
-
-### Available metadata backends
-
- - File metadata backend : (DEPRECATED)
-
-This backend has been deprecated in Plik 1.2 in favor of BoltDB backend.
-The authentication mechanisms ( User / Tokens ) are NOT implemented in this backend.
-Migration from file backend to BoltDB backend can be done using the migrate_from_file_to_bolt script.
-
+```bash
+curl --form 'file=@/path/to/file' http://127.0.0.1:8080
 ```
-server/utils/file2bolt --directory server/files --db server/plik.db
+When Authentication is used and NoAnonymousUploads are enabled you can quick upload using user tokens:
+```bash
+curl --form 'file=@/path/to/file' --header 'X-PlikToken: xxxx-xxx-xxxx-xxxxx-xxxxxxxx' http://127.0.0.1:8080
 ```
 
-This backend save upload metadata as JSON in a .config file in the upload directory.
-This is only suitable for a single instance deployment as locking append at the process level. 
-Using multiple plik instance with this backend will result in corrupted metadata JSON files. Use mongodb backend instead.
+DownloadDomain configuration option must be set for this to properly work.
 
- - Bolt metadata backend : https://github.com/boltdb/bolt
+### Go client <a name="go-client"></a>
 
-This is the successor of the file metadata backend, it store all the metadata in a single bolt.db file. 
-Performance is improved by keeping all metadata in memory to avoid costly filesystem stat operations.  
-Boltdb also support of atomic transactions that ensure the metadata consistency over time.
+Plik now comes with a golang library above which the cli client is built
 
-Only suitable for a single instance deployment as the Bolt database can only be opened by a single process at a time.
+See the [Plik library reference](plik/README.md)
 
- - Mongodb metadata backend : https://www.mongodb.org
+### API <a name="api"></a>
+Plik server expose a HTTP API to manage uploads and get files :
 
-Suitable for distributed / High Availability deployment. 
+See the [Plik API reference](documentation/api.md)
 
-### Authentication
+### Admin CLI <a name="admin-cli"></a>
 
-Plik can authenticate users using Google and/or OVH API. 
-Once authenticated the only call Plik will ever make to those API is to get the user ID, name and email. 
-Plik will never forward any upload data or metadata to any third party.   
-If source IP address restriction is enabled, user accounts can only be created from trusted IPs. But then 
+Using the ./plikd server binary it's possible to :
+  - create/list/delete local accounts
+  - create/list/delete user CLI tokens
+  - create/list/delete files and uploads
+  - import / export metadata
+
+See help for more details
+   
+### Authentication <a name="authentication"></a>
+
+Plik can authenticate users using Local accounts or using Google or OVH APIs.
+
+If source IP address restriction is enabled, user accounts can only be created from trusted IPs and then 
 authenticated users can upload files without source IP restriction.
-It is also possible to deny unauthenticated uploads totally.
 
+It possible to deny unauthenticated uploads totally ( NoAnonymousUploads ).  
+
+Admin users can access the admin dashboard and manipulate every uploads.
+
+   - **Local** :
+      - You can manipulate local users with the server command line
+      
+      ```sh
+      $ ./plikd --config ./plikd.cfg user create --login root --name Admin --admin    
+      Generated password for user root is 08ybEyh2KkiMho8dzpdQaJZm78HmvWGC
+      ```
+      
    - **Google** :
       - You'll need to create a new application in the [Google Developper Console](https://console.developers.google.com)
       - You'll be handed a Google API ClientID and a Google API ClientSecret that you'll need to put in the plikd.cfg file.
@@ -202,27 +243,39 @@ the command line client.
 Token = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 ```
 
-### Security
+### Security <a name="security"></a>
 Plik allow users to upload and serve any content as-is, but hosting untrusted HTML raises some well known security concerns.
+
 Plik will try to avoid HTML rendering by overriding Content-Type to "text-plain" instead of "text/html".
-Also the [Content-Security-Policy](https://content-security-policy.com/) HTTP header should disable sensible features of most recent browsers like resource loading, xhr requests, iframes,...
-Along with that it is still strongly advised to serve uploaded files on a separate (sub-)domain to fight against phishing links and to protect Plik's session cookie with the DownloadDomain configuration parameter.
+  
+By default Plik sets a couple of security HTTP headers like **X-Content-Type-Options, X-XSS-Protection, X-Frame-Options, Content-Security-Policy** to disable sensible features of most recent browsers like resource loading, xhr requests, iframes,...
+This will however break features like audio/video playback, pdf rendering so it's possible to disable this behavior by setting the EnhancedWebSecurity configuration parameter to false
+  
+Along with that it is also strongly advised to serve uploaded files on a separate (sub-)domain to fight against phishing links and to protect Plik's session cookie with the DownloadDomain configuration parameter.  
 
-### API
-Plik server expose a HTTP API to manage uploads and get files :
+### Cross compilation <a name="cross-compilation"></a>
 
-See the [Plik API reference](documentation/api.md)
+All binary are now statically linked. Clients can be safely cross-compiled for all os/architectures as they do not rely on GCO (sqlite)
+Servers rely on CGO/sqlite need a cross-compilation ready environment.
 
-### Docker
-Plik comes with a simple Dockerfile that allows you to run it in a container :
+ `make release` will build release archives for `amd64,i386,arm,arm64`
 
-See the [Plik Docker reference](documentation/docker.md)
+To build a release with only specific architectures of the client
+```
+    CLIENT_TARGETS="linux/amd64" releaser/release.sh
+```
 
-Plik also comes with some useful scripts to test backends in standalone docker instances :
+To build only specific for only specific architectures
+```
+    TARGETS="linux/amd64" releaser/release.sh
+```
 
-See the [Plik Docker backend testing](testing)
+To build with a specific cross compiler toolchain
+```
+    TARGETS="linux/arm/v6" CC=arm-linux-gnueabihf-gcc releaser/release.sh
+```
 
-### FAQ
+### FAQ <a name="faq"></a>
 
 * Why is stream mode broken in multiple instance deployement ?
 
@@ -307,9 +360,9 @@ proxy_buffers 8 1M;
 client_body_buffer_size 1M;
 ```
 
-* Why authentication does not work with HTTP connections ?
+* Why authentication does not work with HTTP connections when EnhancedWebSecurity is set ?
 
-Plik session cookies have the "secure" flag set, so they can only be transmitted over secure HTTPS connections.
+Plik session cookies have the "secure" flag set when EnhancedWebSecurity is set so they can only be transmitted over secure HTTPS connections.
 
 * Build failure "/usr/bin/env: ‘node’: No such file or directory"
 
@@ -331,8 +384,14 @@ scrot -s allow you to "Interactively select a window or rectangle with the mouse
 Plik will upload the screenshot and the url will be directly copied to your clipboard and displayed by xclip.
 The screenshot is then removed of your home directory to avoid garbage.
 
-* How to contribute to the project ?
+### How to contribute to the project ? <a name="how-to-contribute"></a>
 
 Contributions are welcome, feel free to open issues and/or submit pull requests.
-Please run/update the test suite using the makefile test target.
+Please be sure to also run/update the test suite :
 
+```
+    make fmt
+    make lint
+    make test
+    make test-backends
+```

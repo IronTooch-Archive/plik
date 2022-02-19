@@ -1,52 +1,47 @@
-/**
-
-    Plik upload server
-
-The MIT License (MIT)
-
-Copyright (c) <2015> Copyright holders list can be found in AUTHORS file
-	- Mathieu Bodjikian <mathieu@bodjikian.fr>
-	- Charles-Antoine Mathieu <skatkatt@root.gg>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-**/
-
 package common
+
+import (
+	"time"
+)
+
+// FileMissing when a file is waiting to be uploaded
+const FileMissing = "missing"
+
+// FileUploading when a file is being uploaded
+const FileUploading = "uploading"
+
+// FileUploaded when a file has been uploaded and is ready to be downloaded
+const FileUploaded = "uploaded"
+
+// FileRemoved when a file has been removed and can't be downloaded anymore but has not yet been deleted
+const FileRemoved = "removed"
+
+// FileDeleted when a file has been deleted from the data backend
+const FileDeleted = "deleted"
 
 // File object
 type File struct {
-	ID             string                 `json:"id" bson:"fileId"`
-	Name           string                 `json:"fileName" bson:"fileName"`
-	Md5            string                 `json:"fileMd5" bson:"fileMd5"`
-	Status         string                 `json:"status" bson:"status"`
-	Type           string                 `json:"fileType" bson:"fileType"`
-	UploadDate     int64                  `json:"fileUploadDate" bson:"fileUploadDate"`
-	CurrentSize    int64                  `json:"fileSize" bson:"fileSize"`
-	BackendDetails map[string]interface{} `json:"backendDetails,omitempty" bson:"backendDetails"`
-	Reference      string                 `json:"reference" bson:"reference"`
+	ID       string `json:"id"`
+	UploadID string `json:"-" gorm:"size:256;constraint:OnUpdate:RESTRICT,OnDelete:RESTRICT;"`
+	Name     string `json:"fileName"`
+
+	Status string `json:"status"`
+
+	Md5       string `json:"fileMd5"`
+	Type      string `json:"fileType"`
+	Size      int64  `json:"fileSize"`
+	Reference string `json:"reference"`
+
+	BackendDetails string `json:"-"`
+
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 // NewFile instantiate a new object
 // and generate a random id
 func NewFile() (file *File) {
 	file = new(File)
-	file.ID = GenerateRandomID(16)
+	file.GenerateID()
 	return
 }
 
@@ -55,8 +50,7 @@ func (file *File) GenerateID() {
 	file.ID = GenerateRandomID(16)
 }
 
-// Sanitize removes sensible information from
-// object. Used to hide information in API.
+// Sanitize clear some fields to hide sensible information from the API.
 func (file *File) Sanitize() {
-	file.BackendDetails = nil
+	file.BackendDetails = ""
 }

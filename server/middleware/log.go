@@ -1,51 +1,56 @@
-/**
-
-    Plik upload server
-
-The MIT License (MIT)
-
-Copyright (c) <2015>
-	- Mathieu Bodjikian <mathieu@bodjikian.fr>
-	- Charles-Antoine Mathieu <skatkatt@root.gg>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-**/
-
 package middleware
 
 import (
 	"net/http"
 	"net/http/httputil"
 	"strings"
+	"time"
 
-	"github.com/root-gg/juliet"
-	"github.com/root-gg/logger"
-	"github.com/root-gg/plik/server/common"
+	"github.com/root-gg/plik/server/context"
 )
 
+// statusCodeResponseWriter is a responseWriter that keeps track of the response status code
+type statusCodeResponseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+// newStatusCodeResponseWriter wraps a http.ResponseWriter in a statusCodeResponseWriter
+func newStatusCodeResponseWriter(resp http.ResponseWriter) *statusCodeResponseWriter {
+	return &statusCodeResponseWriter{resp, http.StatusOK}
+}
+
+// WriteHeader implement the ResponseWriter interface
+func (resp *statusCodeResponseWriter) WriteHeader(code int) {
+	resp.statusCode = code
+	resp.ResponseWriter.WriteHeader(code)
+}
+
 // Log the http request
-func Log(ctx *juliet.Context, next http.Handler) http.Handler {
+func Log(ctx *context.Context, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
-		log := common.GetLogger(ctx)
+		start := time.Now()
+		log := ctx.GetLogger()
+		config := ctx.GetConfig()
 
-		if log.LogIf(logger.DEBUG) {
+		// Create a response writer that keep track of the response status code
+		statusCodeResponseWriter := newStatusCodeResponseWriter(resp)
+		ctx.SetResp(statusCodeResponseWriter)
 
+		// Serve the request
+		next.ServeHTTP(statusCodeResponseWriter, req)
+
+		// Get the response status code
+		statusCode := statusCodeResponseWriter.statusCode
+		statusCodeString := http.StatusText(statusCode)
+
+		// Get the time elapsed since the request has been received
+		elapsed := time.Since(start)
+
+		// Log the request and response status and duration
+		log.Infof("%v %v [%v %v] (%v)", req.Method, req.RequestURI, statusCode, statusCodeString, elapsed)
+
+		if config.DebugRequests {
 			// Don't dump request body for file upload
 			dumpBody := true
 			if (strings.HasPrefix(req.URL.Path, "/file") ||
@@ -61,10 +66,6 @@ func Log(ctx *juliet.Context, next http.Handler) http.Handler {
 			} else {
 				log.Warningf("Unable to dump HTTP request : %s", err)
 			}
-		} else {
-			log.Infof("%v %v", req.Method, req.RequestURI)
 		}
-
-		next.ServeHTTP(resp, req)
 	})
 }

@@ -1,38 +1,11 @@
-/**
-
-    Plik upload server
-
-The MIT License (MIT)
-
-Copyright (c) <2015>
-	- Mathieu Bodjikian <mathieu@bodjikian.fr>
-	- Charles-Antoine Mathieu <skatkatt@root.gg>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-**/
-
 package common
 
 import (
 	"crypto/rand"
 	"math/big"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 var (
@@ -41,67 +14,98 @@ var (
 
 // Upload object
 type Upload struct {
-	ID       string `json:"id" bson:"id"`
-	Creation int64  `json:"uploadDate" bson:"uploadDate"`
-	TTL      int    `json:"ttl" bson:"ttl"`
+	ID  string `json:"id"`
+	TTL int    `json:"ttl"`
 
-	DownloadDomain string `json:"downloadDomain" bson:"-"`
-	RemoteIP       string `json:"uploadIp,omitempty" bson:"uploadIp"`
-	Comments       string `json:"comments" bson:"comments"`
+	DownloadDomain string `json:"downloadDomain" gorm:"-"`
+	RemoteIP       string `json:"uploadIp,omitempty"`
+	Comments       string `json:"comments"`
 
-	Files map[string]*File `json:"files" bson:"files"`
+	Files []*File `json:"files"`
 
-	UploadToken string `json:"uploadToken,omitempty" bson:"uploadToken"`
-	User        string `json:"user,omitempty" bson:"user"`
-	Token       string `json:"token,omitempty" bson:"token"`
-	IsAdmin     bool   `json:"admin"`
+	UploadToken string `json:"uploadToken,omitempty"`
+	User        string `json:"user,omitempty" gorm:"index:idx_upload_user"`
+	Token       string `json:"token,omitempty" gorm:"index:idx_upload_user_token"`
 
-	Stream    bool `json:"stream" bson:"stream"`
-	OneShot   bool `json:"oneShot" bson:"oneShot"`
-	Removable bool `json:"removable" bson:"removable"`
+	IsAdmin bool `json:"admin" gorm:"-"`
 
-	ProtectedByPassword bool   `json:"protectedByPassword" bson:"protectedByPassword"`
-	Login               string `json:"login,omitempty" bson:"login"`
-	Password            string `json:"password,omitempty" bson:"password"`
+	Stream    bool `json:"stream"`
+	OneShot   bool `json:"oneShot"`
+	Removable bool `json:"removable"`
 
-	ProtectedByYubikey bool   `json:"protectedByYubikey" bson:"protectedByYubikey"`
-	Yubikey            string `json:"yubikey,omitempty" bson:"yubikey"`
+	ProtectedByPassword bool   `json:"protectedByPassword"`
+	Login               string `json:"login,omitempty"`
+	Password            string `json:"password,omitempty"`
 
-	//ShortURL       string `json:"shortUrl" bson:"shortUrl"` removed v1.2.1
+	CreatedAt time.Time      `json:"createdAt"`
+	DeletedAt gorm.DeletedAt `json:"-" gorm:"index:idx_upload_deleted_at"`
+	ExpireAt  *time.Time     `json:"expireAt" gorm:"index:idx_upload_expire_at"`
 }
 
-// NewUpload instantiate a new upload object
+// NewUpload creates a new upload object
 func NewUpload() (upload *Upload) {
-	upload = new(Upload)
-	upload.Files = make(map[string]*File)
-	return
+	upload = &Upload{}
+	upload.GenerateID()
+	upload.GenerateUploadToken()
+	return upload
 }
 
-// Create fills token, id, date
-// We have split in two functions because, the unmarshalling made
-// in http handlers would erase the fields
-func (upload *Upload) Create() {
+// GenerateID generate a new Upload ID and UploadToken
+func (upload *Upload) GenerateID() {
 	upload.ID = GenerateRandomID(16)
-	upload.Creation = time.Now().Unix()
-	if upload.Files == nil {
-		upload.Files = make(map[string]*File)
-	}
+}
+
+// GenerateUploadToken generate a new UploadToken
+func (upload *Upload) GenerateUploadToken() {
 	upload.UploadToken = GenerateRandomID(32)
 }
 
-// Sanitize removes sensible information from
-// object. Used to hide information in API.
-func (upload *Upload) Sanitize() {
+// NewFile creates a new file and add it to the current upload
+func (upload *Upload) NewFile() (file *File) {
+	file = NewFile()
+	upload.Files = append(upload.Files, file)
+	file.UploadID = upload.ID
+	return file
+}
+
+// GetFile get file with ID from upload files. Return nil if not found
+func (upload *Upload) GetFile(ID string) (file *File) {
+	for _, file := range upload.Files {
+		if file.ID == ID {
+			return file
+		}
+	}
+
+	return nil
+}
+
+// GetFileByReference get file with Reference from upload files. Return nil if not found
+func (upload *Upload) GetFileByReference(ref string) (file *File) {
+	for _, file := range upload.Files {
+		if file.Reference == ref {
+			return file
+		}
+	}
+
+	return nil
+}
+
+// Sanitize clear some fields to hide sensible information from the API.
+func (upload *Upload) Sanitize(config *Configuration) {
 	upload.RemoteIP = ""
+	upload.Login = ""
 	upload.Password = ""
-	upload.Yubikey = ""
-	upload.UploadToken = ""
 	upload.User = ""
 	upload.Token = ""
+
+	if !upload.IsAdmin {
+		upload.UploadToken = ""
+	}
+
+	upload.DownloadDomain = config.DownloadDomain
 	for _, file := range upload.Files {
 		file.Sanitize()
 	}
-	upload.DownloadDomain = Config.DownloadDomain
 }
 
 // GenerateRandomID generates a random string with specified length.
@@ -119,10 +123,32 @@ func GenerateRandomID(length int) string {
 
 // IsExpired check if the upload is expired
 func (upload *Upload) IsExpired() bool {
-	if upload.TTL > 0 {
-		if time.Now().Unix() >= (upload.Creation + int64(upload.TTL)) {
+	if upload.ExpireAt != nil {
+		if time.Now().After(*upload.ExpireAt) {
 			return true
 		}
 	}
 	return false
+}
+
+// InitializeForTests initialize upload for database insert without config checks and override for testing purpose
+func (upload *Upload) InitializeForTests() {
+	if upload.ID == "" {
+		upload.GenerateID()
+	}
+
+	if upload.ExpireAt == nil && upload.TTL > 0 {
+		deadline := time.Now().Add(time.Duration(upload.TTL) * time.Second)
+		upload.ExpireAt = &deadline
+	}
+
+	for _, file := range upload.Files {
+		if file.ID == "" {
+			file.GenerateID()
+		}
+		file.UploadID = upload.ID
+		if file.Status == "" {
+			file.Status = FileMissing
+		}
+	}
 }
